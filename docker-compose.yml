@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gcr-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: seller
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcr-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: gcr-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcr-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gcr-api
+    ports:
+      - "8083:8083"
+    environment:
+      PORT: 8083
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seller?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: ${REGISTRY_URL:-https://preprod.registry.ondc.org/v2.0/lookup}
+      SUBSCRIBER_ID: ${SUBSCRIBER_ID}
+      UNIQUE_KEY_ID: ${UNIQUE_KEY_ID}
+      PRIVATE_KEY: ${PRIVATE_KEY}
+      API_KEY_HEADER: ${API_KEY_HEADER:-X-API-Key}
+      OTEL_URL: ${OTEL_URL:-}
+      OTEL_SERVICE: ${OTEL_SERVICE:-gcr-policy-agent}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gcr-network
+    restart: unless-stopped
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gcr-cron
+    command: ["./cron"]
+    environment:
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seller?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      REGISTRY_URL: ${REGISTRY_URL:-https://preprod.registry.ondc.org/v2.0/lookup}
+      SUBSCRIBER_ID: ${SUBSCRIBER_ID}
+      UNIQUE_KEY_ID: ${UNIQUE_KEY_ID}
+      PRIVATE_KEY: ${PRIVATE_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - gcr-network
+    restart: unless-stopped
+
+networks:
+  gcr-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
