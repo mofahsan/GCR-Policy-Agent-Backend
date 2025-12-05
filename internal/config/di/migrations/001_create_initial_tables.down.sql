@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS sellers;
+DROP TABLE IF EXISTS baps;
+DROP TABLE IF EXISTS seller_catalog_state;
